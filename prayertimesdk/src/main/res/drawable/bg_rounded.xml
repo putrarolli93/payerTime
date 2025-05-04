@@ -1,0 +1,12 @@
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+
+    <solid android:color="#caa562"/> <!-- Background putih -->
+
+    <stroke
+        android:width="1dp"
+        android:color="#caa562"/> <!-- Border abu-abu -->
+
+    <corners android:radius="42dp"/> <!-- Radius sudut -->
+
+</shape>

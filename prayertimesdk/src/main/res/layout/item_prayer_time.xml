@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="9dp"
+    android:gravity="center_vertical"
+    android:background="@color/main_color">
+
+    <TextView
+        android:id="@+id/tvPrayerName"
+        android:layout_width="100dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        android:text="Fajr"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:id="@+id/nextPrayerLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintStart_toEndOf="@id/tvPrayerName"
+        app:layout_constraintTop_toTopOf="@id/tvPrayerName"
+        app:layout_constraintBottom_toBottomOf="@id/tvPrayerName"
+        android:background="@drawable/bg_rounded"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="2dp"
+        android:visibility="gone"
+        android:layout_marginEnd="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Next Prayer"
+            android:visibility="gone"
+            android:textColor="#FFF"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvPrayerTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="04:46"
+        android:textColor="#FFFFFF"
+        app:layout_constraintTop_toTopOf="@id/tvPrayerName"
+        app:layout_constraintBottom_toBottomOf="@id/tvPrayerName"
+        app:layout_constraintEnd_toStartOf="@id/imgAlarm"
+        android:textSize="16sp"
+        android:layout_marginEnd="24dp" />
+
+    <ImageView
+        android:id="@+id/imgAlarm"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/tvPrayerName"
+        app:layout_constraintBottom_toBottomOf="@id/tvPrayerName"
+        android:src="@drawable/ic_notif_sleep"/>
+</androidx.constraintlayout.widget.ConstraintLayout>
