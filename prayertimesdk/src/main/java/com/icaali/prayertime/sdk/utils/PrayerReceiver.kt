@@ -9,14 +9,24 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.icaali.prayertime.sdk.R
 
 class PrayerReceiver : BroadcastReceiver() {
+
     override fun onReceive(context: Context, intent: Intent) {
+        // Memastikan receiver berjalan bahkan di background
+        val wakeLock = (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MyApp:PrayerWakeLock")
+        wakeLock.acquire(10*60*1000L) // 10 menit
+
         val prayerName = intent.getStringExtra("prayer_name") ?: return
 
+        // Tampilkan notifikasi
         showNotification(context, prayerName)
+
+        wakeLock.release()
     }
 
     private fun showNotification(context: Context, prayerName: String) {
@@ -28,11 +38,19 @@ class PrayerReceiver : BroadcastReceiver() {
 
         val soundUri: Uri = Uri.parse("android.resource://${context.packageName}/${R.raw.azantonenew}")
 
+        var title = "It's time for ${prayerName.capitalizeFirst()} prayer"
+        var content = "the most beloved deed to Allah is performing the prayer on time. (HR. Bukhori, Muslim)"
+        if (prayerName == "imsak") {
+            title = "It's time for ${prayerName.capitalizeFirst()}"
+            content = "Prepare yourself for the Fajr prayer."
+        }
+
         val notification = NotificationCompat.Builder(context, "prayer_channel")
-            .setContentTitle("Waktu Sholat: $prayerName")
-            .setContentText("Ini adalah waktu sholat $prayerName!")
-            .setSmallIcon(R.drawable.ic_notif_on) // Ganti dengan ikon notifikasi
+            .setContentTitle(title)
+            .setContentText(content)
+            .setSmallIcon(R.drawable.ic_prayer_time) // Ganti dengan ikon notifikasi
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM) // Menandai sebagai notifikasi alarm
             .setAutoCancel(true)
             .setSound(soundUri)
             .setDefaults(Notification.DEFAULT_SOUND)
@@ -48,7 +66,7 @@ class PrayerReceiver : BroadcastReceiver() {
 
             val soundUri: Uri = Uri.parse("android.resource://${context.packageName}/${R.raw.azantonenew}")
             val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build()
 
@@ -60,6 +78,8 @@ class PrayerReceiver : BroadcastReceiver() {
                 enableLights(true)
                 enableVibration(true)
                 setSound(soundUri, audioAttributes) // <- pasang suara DI SINI
+                setBypassDnd(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC // Terlihat di layar kunci
                 description = "Channel untuk notifikasi jadwal sholat"
             }
 

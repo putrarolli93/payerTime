@@ -17,6 +17,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.os.PowerManager
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
@@ -69,6 +70,39 @@ class MainActivity : AppCompatActivity() {
         setUpDefaultLocation()
         checkExactAlarmPermission()
         getLocation(this)
+        requestBatteryOptimization()
+    }
+
+    private fun requestBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error requesting battery optimization exception", e)
+                }
+            }
+        }
+    }
+
+    private fun checkNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    1001
+                )
+            }
+        }
     }
 
     private fun setUpDefaultLocation() {
@@ -345,6 +379,7 @@ class MainActivity : AppCompatActivity() {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // Izin diberikan, panggil getLocation lagi
                 getLocation(this)
+                checkNotificationPermission()
             } else {
                 // Izin ditolak, beri tahu pengguna
                 // Bisa tambahkan dialog atau penanganan lain di sini
@@ -449,6 +484,7 @@ class MainActivity : AppCompatActivity() {
 
         val intent = Intent(context, PrayerReceiver::class.java).apply {
             putExtra("prayer_name", prayerWithNotif.name)
+            flags = Intent.FLAG_RECEIVER_FOREGROUND
         }
 
         val pendingIntent = PendingIntent.getBroadcast(
@@ -459,11 +495,35 @@ class MainActivity : AppCompatActivity() {
         )
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        alarmManager.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            calendar.timeInMillis,
-            pendingIntent
-        )
+
+        // Gunakan setAlarmClock untuk Android 8+ (lebih reliable)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Untuk Android 12+, periksa izin SCHEDULE_EXACT_ALARM
+                if (alarmManager.canScheduleExactAlarms()) {
+                    val info = AlarmManager.AlarmClockInfo(calendar.timeInMillis, pendingIntent)
+                    alarmManager.setAlarmClock(info, pendingIntent)
+                } else {
+                    // Jika tidak memiliki izin, gunakan setAndAllowWhileIdle sebagai fallback
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        calendar.timeInMillis,
+                        pendingIntent
+                    )
+                }
+            } else {
+                // Untuk Android 8-11
+                val info = AlarmManager.AlarmClockInfo(calendar.timeInMillis, pendingIntent)
+                alarmManager.setAlarmClock(info, pendingIntent)
+            }
+        } else {
+            // Untuk Android 6-7
+            alarmManager.setExact(
+                AlarmManager.RTC_WAKEUP,
+                calendar.timeInMillis,
+                pendingIntent
+            )
+        }
     }
 
     // Fungsi untuk membatalkan alarm
