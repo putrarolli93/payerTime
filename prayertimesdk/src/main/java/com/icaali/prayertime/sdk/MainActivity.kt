@@ -54,23 +54,96 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewModel: PrayerTimeViewModel
     private lateinit var adapter: PrayerTimeAdapter
     private lateinit var prayerPrefManager: PrayerPrefManager
-    private val LOCATION_PERMISSION_REQUEST_CODE = 1000
+    var pendingUpdatedItem: PrayerWithNotif? = null
+    private var pendingPrayerItem: PrayerWithNotif? = null
+
     var savedCity = ""
     var savedCountry = ""
+    companion object {
+        private const val PERMISSION_REQUEST_CODE = 100
+        private const val LOCATION_PERMISSION_REQUEST_CODE = 1000
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
-        enableEdgeToEdge()
+//        enableEdgeToEdge()
 
         prayerPrefManager = PrayerPrefManager(this)
         setUpView()
         setupRecyclerView()
         setupViewModel()
         setUpDefaultLocation()
-        checkExactAlarmPermission()
-        getLocation(this)
+//        checkExactAlarmPermission()
+//        requestRelevantPermissions(this)
+        getLocation(this@MainActivity)
         requestBatteryOptimization()
+    }
+
+    private fun requestRelevantPermissions(activity: Activity) {
+        val permissionsToRequest = mutableListOf<String>()
+
+        // Cek permission notifikasi (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        // Cek dan request permission lokasi (jika dibutuhkan di sini juga)
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+
+        if (permissionsToRequest.isNotEmpty()) {
+            ActivityCompat.requestPermissions(
+                activity,
+                permissionsToRequest.toTypedArray(),
+                PERMISSION_REQUEST_CODE
+            )
+        } else {
+            // Jika semua permission sudah diberikan, cek izin alarm
+            checkExactAlarmPermission(activity)
+        }
+    }
+
+    private fun checkExactAlarmPermission(activity: Activity) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = activity.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            if (!alarmManager.canScheduleExactAlarms()) {
+                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    data = Uri.parse("package:${activity.packageName}")
+                }
+                activity.startActivity(intent)
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            val granted = grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+
+            if (granted && pendingUpdatedItem != null) {
+                handlePrayerNotificationToggle(pendingUpdatedItem!!)
+                pendingUpdatedItem = null
+            }
+        }
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                getLocation(this@MainActivity)
+            } else {
+                // Izin ditolak
+                Log.d("Permission", "Lokasi ditolak")
+            }
+        }
     }
 
     private fun requestBatteryOptimization() {
@@ -85,22 +158,6 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Log.e("MainActivity", "Error requesting battery optimization exception", e)
                 }
-            }
-        }
-    }
-
-    private fun checkNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    1001
-                )
             }
         }
     }
@@ -129,44 +186,104 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun handlePrayerNotificationToggle(updatedItem: PrayerWithNotif) {
+
+        // Update status di SharedPreferences
+        prayerPrefManager.updateNotifStatus(updatedItem.name, updatedItem.isNotifEnabled)
+
+        // Tampilkan snackbar sesuai status
+        val text = when {
+            updatedItem.name == "imsak" && updatedItem.isNotifEnabled ->
+                "Active ${updatedItem.name.capitalizeFirst()} reminder"
+            updatedItem.name == "imsak" && !updatedItem.isNotifEnabled ->
+                "Inactive ${updatedItem.name.capitalizeFirst()} reminder"
+            updatedItem.name == "fajr" && updatedItem.isNotifEnabled ->
+                "Active Shubuh Prayer"
+            updatedItem.name == "fajr" && !updatedItem.isNotifEnabled ->
+                "Inactive Shubuh Prayer"
+            updatedItem.isNotifEnabled ->
+                "Active ${updatedItem.name.capitalizeFirst()} Prayer"
+            else ->
+                "Inactive ${updatedItem.name.capitalizeFirst()} Prayer"
+        }
+
+        val color = if (updatedItem.isNotifEnabled) R.color.colorYellow else R.color.colorRedNotif
+        Snackbar.make(binding.root, text, Snackbar.LENGTH_LONG)
+            .setBackgroundTint(ContextCompat.getColor(this, color))
+            .show()
+
+        // Refresh adapter
+        val updatedList = prayerPrefManager.getPrayerList()
+        adapter.setData(updatedList)
+
+        if (hasExactAlarmPermission(this@MainActivity) && updatedItem.isNotifEnabled) {
+            setPrayerAlarm(this, updatedItem)
+        } else if (!hasExactAlarmPermission(this@MainActivity)) {
+            pendingPrayerItem = updatedItem // Simpan niat
+            requestExactAlarmPermission(this@MainActivity)
+        }else {
+            cancelPrayerAlarm(this, updatedItem) // Batalkan alarm
+        }
+    }
+
+    fun hasExactAlarmPermission(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.canScheduleExactAlarms()
+        } else {
+            true // < Android 12 tidak butuh izin
+        }
+    }
+
+    fun requestExactAlarmPermission(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
+            context.startActivity(intent)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        pendingPrayerItem?.let {
+            if (hasExactAlarmPermission(this) && it.isNotifEnabled) {
+                setPrayerAlarm(this, it)
+                pendingPrayerItem = null
+            }
+        }
+    }
+
     private fun setupRecyclerView() {
         adapter = PrayerTimeAdapter{ updatedItem ->
-            checkAndOpenNotificationSettings(this)
-            prayerPrefManager.updateNotifStatus(updatedItem.name, updatedItem.isNotifEnabled)
-
-            if (updatedItem.isNotifEnabled) {
-                var text = "Active ${updatedItem.name.capitalizeFirst()} Prayer "
-                if (updatedItem.name == "imsak") {
-                    text = "Active ${updatedItem.name.capitalizeFirst()} reminder"
-                }else if (updatedItem.name == "fajr")
-                    text = "Active Shubuh Prayer"
-                Snackbar.make(binding.root, text, Snackbar.LENGTH_LONG)
-                    .setBackgroundTint(resources.getColor(R.color.colorYellow))
-                    .show()
-            }else {
-                var text = "Inactive ${updatedItem.name.capitalizeFirst()} Prayer"
-                if (updatedItem.name == "imsak") {
-                    text = "Inactive ${updatedItem.name.capitalizeFirst()} reminder"
-                }else if (updatedItem.name == "fajr")
-                    text = "Inactive Shubuh Prayer"
-
-                Snackbar.make(binding.root, text, Snackbar.LENGTH_LONG)
-                    .setBackgroundTint(resources.getColor(R.color.colorRedNotif))
-                    .show()
-            }
-            // Ambil ulang data, dan refresh adapter
-            val updatedList = prayerPrefManager.getPrayerList()
-            adapter.setData(updatedList)
-
-            // Menyalakan/mematikan alarm sesuai status isNotifEnabled
-            if (updatedItem.isNotifEnabled) {
-                setPrayerAlarm(this, updatedItem) // Jadwalkan alarm
+            if (!hasAllRelevantPermissions()) {
+                pendingUpdatedItem = updatedItem
+                requestRelevantPermissions(this@MainActivity)
             } else {
-                cancelPrayerAlarm(this, updatedItem) // Batalkan alarm
+                handlePrayerNotificationToggle(updatedItem)
             }
         }
         binding.rvPrayerTime.layoutManager = LinearLayoutManager(this)
         binding.rvPrayerTime.adapter = adapter
+    }
+
+    private fun hasAllRelevantPermissions(): Boolean {
+        val notificationGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else true // Sebelum Android 13, gak perlu izin notifikasi
+
+        val locationGranted = ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        return notificationGranted && locationGranted
     }
 
     private fun setupViewModel() {
@@ -254,39 +371,7 @@ class MainActivity : AppCompatActivity() {
         // Nyalakan alarm baru hanya untuk yang notif-nya aktif
         prayerFormat.forEach { prayer ->
             if (prayer.isNotifEnabled) {
-                val timeParts = prayer.time.split(":")
-                if (timeParts.size == 2) {
-                    val hour = timeParts[0].toIntOrNull() ?: return@forEach
-                    val minute = timeParts[1].toIntOrNull() ?: return@forEach
-
-                    val calendar = Calendar.getInstance().apply {
-                        set(Calendar.HOUR_OF_DAY, hour)
-                        set(Calendar.MINUTE, minute)
-                        set(Calendar.SECOND, 0)
-                        set(Calendar.MILLISECOND, 0)
-
-                        if (before(Calendar.getInstance())) {
-                            add(Calendar.DAY_OF_YEAR, 1)
-                        }
-                    }
-
-                    val intent = Intent(context, PrayerReceiver::class.java).apply {
-                        putExtra("prayer_name", prayer.name)
-                    }
-
-                    val pendingIntent = PendingIntent.getBroadcast(
-                        context,
-                        prayer.name.hashCode(),
-                        intent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                    )
-
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        calendar.timeInMillis,
-                        pendingIntent
-                    )
-                }
+                setPrayerAlarm(this, prayer)
             }
         }
     }
@@ -317,7 +402,7 @@ class MainActivity : AppCompatActivity() {
         ) {
             // Jika izin belum diberikan, minta izin
             ActivityCompat.requestPermissions(
-                this,
+                this@MainActivity,
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
                 LOCATION_PERMISSION_REQUEST_CODE
             )
@@ -365,26 +450,6 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             e.printStackTrace()
             null
-        }
-    }
-
-    // Override onRequestPermissionsResult untuk menangani respons izin
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // Izin diberikan, panggil getLocation lagi
-                getLocation(this)
-                checkNotificationPermission()
-            } else {
-                // Izin ditolak, beri tahu pengguna
-                // Bisa tambahkan dialog atau penanganan lain di sini
-                Toast.makeText(this, "You have enable location permission", Toast.LENGTH_LONG).show()
-            }
         }
     }
 
@@ -478,6 +543,7 @@ class MainActivity : AppCompatActivity() {
 
             // ⏰ Geser ke besok kalau waktu sudah lewat
             if (timeInMillis <= System.currentTimeMillis()) {
+                Log.d("Alarmcuy", "Alarm udah lewat")
                 add(Calendar.DAY_OF_YEAR, 1)
             }
         }
@@ -501,15 +567,19 @@ class MainActivity : AppCompatActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 // Untuk Android 12+, periksa izin SCHEDULE_EXACT_ALARM
                 if (alarmManager.canScheduleExactAlarms()) {
-                    val info = AlarmManager.AlarmClockInfo(calendar.timeInMillis, pendingIntent)
-                    alarmManager.setAlarmClock(info, pendingIntent)
-                } else {
-                    // Jika tidak memiliki izin, gunakan setAndAllowWhileIdle sebagai fallback
+                    val triggerTime = System.currentTimeMillis() + 10 * 1000 // 10 detik dari sekarang
                     alarmManager.setExactAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         calendar.timeInMillis,
                         pendingIntent
                     )
+                } else {
+                    // Jika tidak memiliki izin, gunakan setAndAllowWhileIdle sebagai fallback
+                    val dateFormat = SimpleDateFormat("HH:mm:ss dd-MM-yyyy", Locale.getDefault())
+                    val readableTime = dateFormat.format(Date(calendar.timeInMillis))
+                    Log.d("Alarmcuy", "Alarm akan menyala pada: $readableTime")
+                    val info = AlarmManager.AlarmClockInfo(calendar.timeInMillis, pendingIntent)
+                    alarmManager.setAlarmClock(info, pendingIntent)
                 }
             } else {
                 // Untuk Android 8-11
@@ -538,18 +608,6 @@ class MainActivity : AppCompatActivity() {
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         alarmManager.cancel(pendingIntent)
-    }
-
-    private fun checkExactAlarmPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            if (!alarmManager.canScheduleExactAlarms()) {
-                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-                startActivity(intent)
-            }
-        }
     }
 
     fun checkAndOpenNotificationSettings(context: Context) {

@@ -1,9 +1,8 @@
-package com.icaali.prayertime.sdk.utils
+package com.icaali.prayertime
 
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -11,64 +10,38 @@ import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.icaali.prayertime.sdk.MainActivity
 import com.icaali.prayertime.sdk.R
+import com.icaali.prayertime.sdk.utils.capitalizeFirst
 
-class PrayerReceiver : BroadcastReceiver() {
-
-    override fun onReceive(context: Context, intent: Intent) {
-        // Memastikan receiver berjalan bahkan di background
+class AlarmReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent?) {
+        Log.d("Alarmcuy", "onReceive")
         val wakeLock = (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MyApp:PrayerWakeLock")
-        wakeLock.acquire(10*60*1000L) // 10 menit
-
-        val prayerName = intent.getStringExtra("prayer_name") ?: return
-
-        // Tampilkan notifikasi
-        showNotification(context, prayerName)
-
-        wakeLock.release()
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "app:alarmWakeLock")
+        wakeLock.acquire(3000)
+        showNotification(context)
     }
 
-    private fun showNotification(context: Context, prayerName: String) {
+    private fun showNotification(context: Context) {
+        Log.d("Alarmcuy", "showNotification")
+
         createNotificationChannel(context)
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        val notificationId = prayerName.hashCode() // Gunakan hashcode untuk ID unik
-
+        val notificationId = "testAlarm".hashCode()
         val soundUri: Uri = Uri.parse("android.resource://${context.packageName}/${R.raw.azantonenew}")
 
-        var title = "It's time for ${prayerName.capitalizeFirst()} prayer"
-        var content = "the most beloved deed to Allah is performing the prayer on time. (HR. Bukhori, Muslim)"
-        if (prayerName == "imsak") {
-            title = "It's time for ${prayerName.capitalizeFirst()}"
-            content = "Prepare yourself for the Fajr prayer."
-        }
-        // ✅ Intent to open MainActivity when notification clicked
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            putExtra("from_notification", true)
-            putExtra("prayer_name", prayerName)
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
         val notification = NotificationCompat.Builder(context, "prayer_channel")
-            .setContentTitle(title)
-            .setContentText(content)
-            .setSmallIcon(R.drawable.ic_notif_time)
+            .setContentTitle("Test Title")
+            .setContentText("test desc")
+            .setSmallIcon(R.drawable.ic_prayer_time) // Ganti dengan ikon notifikasi
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM) // Menandai sebagai notifikasi alarm
             .setAutoCancel(true)
             .setSound(soundUri)
             .setDefaults(Notification.DEFAULT_SOUND)
-            .setContentIntent(pendingIntent)
             .build()
 
         notificationManager.notify(notificationId, notification)

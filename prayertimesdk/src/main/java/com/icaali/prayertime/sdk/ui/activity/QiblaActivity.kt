@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.animation.Animation
 import android.view.animation.RotateAnimation
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import com.icaali.prayertime.sdk.databinding.ActivityQiblaBinding
 import io.github.derysudrajat.compassqibla.CompassQibla
@@ -18,6 +19,9 @@ class QiblaActivity: AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityQiblaBinding.inflate(layoutInflater)
         setContentView(binding.root)
+//        enableEdgeToEdge()
+        binding.ivBack.setOnClickListener { finish() }
+
 
         CompassQibla.Builder(this).onPermissionGranted { permission ->
             Toast.makeText(this, "onPermissionGranted $permission", Toast.LENGTH_SHORT).show()
